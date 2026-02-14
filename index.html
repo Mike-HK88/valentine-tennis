@@ -33,12 +33,12 @@
   <script type="importmap">
 {
   "imports": {
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
+    "react": "https://esm.sh/react@^19.2.4",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "lucide-react": "https://esm.sh/lucide-react@^0.564.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4"
   }
 }
 </script>
@@ -52,12 +52,28 @@
       import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
       import { 
         Heart, Calendar, ClipboardList, Trophy, Settings, 
-        MapPin, Clock, Info as InfoIcon, Car, Users, User, Upload, Medal 
+        MapPin, Clock, Info as InfoIcon, Car, Users, User, Upload, Medal,
+        Cloud, CloudOff, Loader2
       } from 'https://esm.sh/lucide-react@0.344.0';
+      
+      // --- FIREBASE IMPORTS ---
+      import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+      import { getFirestore, doc, onSnapshot, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+      // ------------------------------------------------------------------
+      // ⚠️ IMPORTANT: REPLACE THIS CONFIG WITH YOUR OWN FROM FIREBASE CONSOLE ⚠️
+      // ------------------------------------------------------------------
+      const FIREBASE_CONFIG = {
+        apiKey: "AIzaSyCM7rzGYvbTUA1VOj5fUFPnmVO9WGTMU9g",           // e.g. "AIzaSy..."
+        authDomain: "valentine-tennis.firebaseapp.com",       // e.g. "project.firebaseapp.com"
+        projectId: "valentine-tennis",        // e.g. "project-id"
+        storageBucket: "valentine-tennis.firebasestorage.app",    // e.g. "project.appspot.com"
+        messagingSenderId: "946233180504",
+        appId: "1:946233180504:web:864ddd2cf005258f3d652d"
+      };
+      // ------------------------------------------------------------------
 
       // --- TYPES ---
-      // Interfaces are for TS checking, Babel will strip them out.
-      
       interface Player {
         id: string;
         name: string;
@@ -94,11 +110,6 @@
 
       interface ScoreState {
         [matchId: string]: MatchScore;
-      }
-
-      interface PlayerStats extends Player {
-        gamesWon: number;
-        matchesPlayed: number;
       }
 
       interface PlayoffScores {
@@ -261,6 +272,8 @@
               enName: 'English Name',
               cnName: 'Chinese Name',
               reset: 'Reset Default Names',
+              syncTitle: 'Cloud Sync',
+              syncWarning: 'Firebase Config Missing! Data will not sync between devices.',
           }
         },
         cn: {
@@ -315,9 +328,26 @@
               enName: '英文名',
               cnName: '中文名',
               reset: '重置默认姓名',
+              syncTitle: '云端同步',
+              syncWarning: '未配置 Firebase！数据无法在设备间同步。',
           }
         },
       };
+
+      // --- FIREBASE HELPER ---
+      let db = null;
+      let firebaseApp = null;
+      const DOC_ID = 'valentine_2025_event';
+      const COLLECTION_ID = 'events';
+
+      if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.length > 5) {
+        try {
+          firebaseApp = initializeApp(FIREBASE_CONFIG);
+          db = getFirestore(firebaseApp);
+        } catch (e) {
+          console.error("Firebase init failed:", e);
+        }
+      }
 
       // --- COMPONENTS ---
 
@@ -437,16 +467,8 @@
       // 3. ScheduleTab
       const ScheduleTab = ({ lang, players }) => {
         const t = TRANSLATIONS[lang].schedule;
-
-        const getPlayer = (id) => {
-           return players.find((p) => p.id === id);
-        };
-
-        const getPlayerName = (p) => {
-          if (!p) return '';
-          return lang === 'cn' && p.nameCn ? p.nameCn : p.name;
-        };
-
+        const getPlayer = (id) => players.find((p) => p.id === id);
+        const getPlayerName = (p) => !p ? '' : (lang === 'cn' && p.nameCn ? p.nameCn : p.name);
         const sortPlayersByGender = (p1, p2) => {
           if (!p1 || !p2) return [p1, p2];
           return p1.gender === 'F' ? [p1, p2] : [p2, p1];
@@ -468,7 +490,6 @@
                 const t1p1 = getPlayer(match.team1.player1);
                 const t1p2 = getPlayer(match.team1.player2);
                 const [t1Lady, t1Man] = sortPlayersByGender(t1p1, t1p2);
-
                 const t2p1 = getPlayer(match.team2.player1);
                 const t2p2 = getPlayer(match.team2.player2);
                 const [t2Lady, t2Man] = sortPlayersByGender(t2p1, t2p2);
@@ -479,7 +500,6 @@
                       {t.court} {match.court}
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      
                       <div className="flex flex-col gap-1 w-[42%] items-end">
                          <div className="flex items-center gap-2">
                               <span className="font-medium text-slate-800 text-xs sm:text-sm text-right leading-tight">{getPlayerName(t1Lady)}</span>
@@ -490,9 +510,7 @@
                               <PlayerAvatar size="xs" url={t1Man?.avatar} name={getPlayerName(t1Man)} />
                          </div>
                       </div>
-
                       <div className="text-valentine-400 font-bold px-1 text-xs">VS</div>
-
                       <div className="flex flex-col gap-1 w-[42%] items-start">
                          <div className="flex items-center gap-2">
                              <PlayerAvatar size="xs" url={t2Lady?.avatar} name={getPlayerName(t2Lady)} />
@@ -503,7 +521,6 @@
                              <span className="font-medium text-slate-800 text-xs sm:text-sm text-left leading-tight">{getPlayerName(t2Man)}</span>
                          </div>
                       </div>
-
                     </div>
                   </div>
                 );
@@ -515,7 +532,6 @@
         return (
           <div className="space-y-2 animate-fadeIn">
               {SCHEDULE.map(renderRound)}
-              
               <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-valentine-600 flex justify-between items-center">
                    <span className="font-bold text-slate-700">4:10 PM</span>
                    <span className="font-bold text-valentine-700">{t.semis}</span>
@@ -528,33 +544,17 @@
         );
       };
 
-      // 4. ScoreTab & MatchCard
+      // 4. ScoreTab
       const MatchCard = ({
-        title,
-        t1Players,
-        t2Players,
-        score1,
-        score2,
-        onScore1,
-        onScore2,
-        isFinal = false,
-        subtitle = null,
-        lang
+        title, t1Players, t2Players, score1, score2, onScore1, onScore2, isFinal = false, subtitle = null, lang
       }) => {
-         const getLocalizedName = (lang, p) => {
-            if (!p) return '';
-            return lang === 'cn' && p.nameCn ? p.nameCn : p.name;
-         };
-         
+         const getLocalizedName = (lang, p) => !p ? '' : (lang === 'cn' && p.nameCn ? p.nameCn : p.name);
          const sortPlayers = (p1, p2) => {
             const list = [p1, p2];
             const lady = list.find(p => p?.gender === 'F');
             const man = list.find(p => p?.gender === 'M');
-            const first = lady || p1;
-            const second = man || (first === p1 ? p2 : p1);
-            return [first, second];
+            return [lady || p1, man || (lady === p1 ? p2 : p1)];
          };
-
          const [t1p1, t1p2] = sortPlayers(t1Players[0], t1Players[1]);
          const [t2p1, t2p2] = sortPlayers(t2Players[0], t2Players[1]);
 
@@ -574,11 +574,9 @@
                         {getLocalizedName(lang, t1p1)}<br/>{getLocalizedName(lang, t1p2)}
                       </div>
                   </div>
-
                   <div className="flex items-center gap-1 mx-1 sm:mx-2 shrink-0">
                       <input 
-                        type="number" 
-                        inputMode="numeric"
+                        type="number" inputMode="numeric"
                         className={`w-9 h-9 sm:w-10 sm:h-10 text-center border rounded bg-white font-bold text-lg focus:ring-2 focus:ring-valentine-300 outline-none ${isFinal ? 'border-yellow-300' : 'border-slate-300'}`}
                         value={score1 === undefined ? '' : score1}
                         onChange={(e) => onScore1(e.target.value)}
@@ -586,15 +584,13 @@
                       />
                       <span className="text-slate-300 font-bold text-xs">:</span>
                        <input 
-                        type="number" 
-                        inputMode="numeric"
+                        type="number" inputMode="numeric"
                         className={`w-9 h-9 sm:w-10 sm:h-10 text-center border rounded bg-white font-bold text-lg focus:ring-2 focus:ring-valentine-300 outline-none ${isFinal ? 'border-yellow-300' : 'border-slate-300'}`}
                         value={score2 === undefined ? '' : score2}
                         onChange={(e) => onScore2(e.target.value)}
                         placeholder="-"
                       />
                   </div>
-
                   <div className="flex flex-col items-center flex-1 min-w-0">
                        <div className="flex -space-x-2 mb-1">
                           <PlayerAvatar url={t2p1?.avatar} name={getLocalizedName(lang, t2p1)} size="sm" className="ring-2 ring-white z-10"/>
@@ -605,7 +601,6 @@
                       </div>
                   </div>
               </div>
-              {subtitle && <div className="text-center text-[10px] text-slate-400 mt-1">{subtitle}</div>}
           </div>
          );
       };
@@ -616,7 +611,6 @@
         const tResults = TRANSLATIONS[lang].results;
         const tSched = TRANSLATIONS[lang].schedule;
         const tSub = TRANSLATIONS[lang].subTabs;
-
         const getPlayer = (id) => players.find(p => p.id === id);
 
         const calculateStats = () => {
@@ -629,28 +623,23 @@
                       const t1Score = Number(matchScore.team1Games) || 0;
                       const t2Score = Number(matchScore.team2Games) || 0;
                       [match.team1.player1, match.team1.player2].forEach(pid => {
-                          stats[pid].gamesWon += t1Score;
-                          stats[pid].matchesPlayed += 1;
+                          stats[pid].gamesWon += t1Score; stats[pid].matchesPlayed += 1;
                       });
                       [match.team2.player1, match.team2.player2].forEach(pid => {
-                          stats[pid].gamesWon += t2Score;
-                          stats[pid].matchesPlayed += 1;
+                          stats[pid].gamesWon += t2Score; stats[pid].matchesPlayed += 1;
                       });
                   }
               });
           });
           return Object.values(stats);
         };
-
         const allStats = calculateStats();
         const menStats = allStats.filter(p => p.gender === 'M').sort((a, b) => b.gamesWon - a.gamesWon);
         const womenStats = allStats.filter(p => p.gender === 'F').sort((a, b) => b.gamesWon - a.gamesWon);
-
         const s1_team1 = { m: menStats[0], f: womenStats[3] }; 
         const s1_team2 = { m: menStats[2], f: womenStats[1] }; 
         const s2_team1 = { m: menStats[1], f: womenStats[2] }; 
         const s2_team2 = { m: menStats[3], f: womenStats[0] };
-
         const s1_winner = playoffScores.s1_t1 > playoffScores.s1_t2 ? s1_team1 : s1_team2;
         const s1_loser = playoffScores.s1_t1 > playoffScores.s1_t2 ? s1_team2 : s1_team1;
         const s2_winner = playoffScores.s2_t1 > playoffScores.s2_t2 ? s2_team1 : s2_team2;
@@ -660,42 +649,18 @@
           <div className="animate-fadeIn">
             <div className="flex justify-center mb-6">
               <div className="bg-slate-100 p-1 rounded-lg inline-flex shadow-inner">
-                  <button
-                      onClick={() => setSubTab('rounds')}
-                      className={`px-6 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'rounds' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                      {tSub.rounds}
-                  </button>
-                  <button
-                      onClick={() => setSubTab('finals')}
-                      className={`px-6 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'finals' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                      {tSub.finals}
-                  </button>
+                  <button onClick={() => setSubTab('rounds')} className={`px-6 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'rounds' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{tSub.rounds}</button>
+                  <button onClick={() => setSubTab('finals')} className={`px-6 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'finals' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{tSub.finals}</button>
               </div>
             </div>
-
             {subTab === 'rounds' ? (
               <div className="space-y-6">
                   {SCHEDULE.map((round) => (
                       <div key={round.id}>
-                          <h3 className="font-bold text-valentine-800 mb-3 px-1 flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-valentine-500"></span>
-                              {lang === 'en' ? round.nameEn : round.nameCn}
-                          </h3>
+                          <h3 className="font-bold text-valentine-800 mb-3 px-1 flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-valentine-500"></span>{lang === 'en' ? round.nameEn : round.nameCn}</h3>
                           <div className="grid grid-cols-1 gap-1">
                               {round.matches.map((match) => (
-                                   <MatchCard 
-                                      key={match.id}
-                                      lang={lang}
-                                      title={`${tSched.court} ${match.court}`}
-                                      t1Players={[getPlayer(match.team1.player1), getPlayer(match.team1.player2)]}
-                                      t2Players={[getPlayer(match.team2.player1), getPlayer(match.team2.player2)]}
-                                      score1={scores[match.id]?.team1Games}
-                                      score2={scores[match.id]?.team2Games}
-                                      onScore1={(v) => onUpdateScore(match.id, 'team1', v)}
-                                      onScore2={(v) => onUpdateScore(match.id, 'team2', v)}
-                                   />
+                                   <MatchCard key={match.id} lang={lang} title={`${tSched.court} ${match.court}`} t1Players={[getPlayer(match.team1.player1), getPlayer(match.team1.player2)]} t2Players={[getPlayer(match.team2.player1), getPlayer(match.team2.player2)]} score1={scores[match.id]?.team1Games} score2={scores[match.id]?.team2Games} onScore1={(v) => onUpdateScore(match.id, 'team1', v)} onScore2={(v) => onUpdateScore(match.id, 'team2', v)} />
                               ))}
                           </div>
                       </div>
@@ -703,64 +668,21 @@
               </div>
             ) : (
               <div>
-                  <MatchCard
-                      lang={lang}
-                      title={tResults.semi1}
-                      t1Players={[s1_team1.f, s1_team1.m]}
-                      t2Players={[s1_team2.f, s1_team2.m]}
-                      score1={playoffScores.s1_t1}
-                      score2={playoffScores.s1_t2}
-                      onScore1={(v) => onUpdatePlayoffScore('s1_t1', v)}
-                      onScore2={(v) => onUpdatePlayoffScore('s1_t2', v)}
-                  />
-                  <MatchCard
-                      lang={lang}
-                      title={tResults.semi2}
-                      t1Players={[s2_team1.f, s2_team1.m]}
-                      t2Players={[s2_team2.f, s2_team2.m]}
-                      score1={playoffScores.s2_t1}
-                      score2={playoffScores.s2_t2}
-                      onScore1={(v) => onUpdatePlayoffScore('s2_t1', v)}
-                      onScore2={(v) => onUpdatePlayoffScore('s2_t2', v)}
-                  />
-                  
-                  <div className="mt-8">
-                      <MatchCard
-                          lang={lang}
-                          title={tResults.gold}
-                          t1Players={[s1_winner.f, s1_winner.m]}
-                          t2Players={[s2_winner.f, s2_winner.m]}
-                          score1={playoffScores.final_t1}
-                          score2={playoffScores.final_t2}
-                          onScore1={(v) => onUpdatePlayoffScore('final_t1', v)}
-                          onScore2={(v) => onUpdatePlayoffScore('final_t2', v)}
-                          isFinal={true}
-                      />
-                  </div>
-                  <div className="mt-4 opacity-75 grayscale hover:grayscale-0 transition-all">
-                      <MatchCard
-                          lang={lang}
-                          title={tResults.bronze}
-                          t1Players={[s1_loser.f, s1_loser.m]}
-                          t2Players={[s2_loser.f, s2_loser.m]}
-                          score1={playoffScores.bronze_t1}
-                          score2={playoffScores.bronze_t2}
-                          onScore1={(v) => onUpdatePlayoffScore('bronze_t1', v)}
-                          onScore2={(v) => onUpdatePlayoffScore('bronze_t2', v)}
-                      />
-                  </div>
+                  <MatchCard lang={lang} title={tResults.semi1} t1Players={[s1_team1.f, s1_team1.m]} t2Players={[s1_team2.f, s1_team2.m]} score1={playoffScores.s1_t1} score2={playoffScores.s1_t2} onScore1={(v) => onUpdatePlayoffScore('s1_t1', v)} onScore2={(v) => onUpdatePlayoffScore('s1_t2', v)} />
+                  <MatchCard lang={lang} title={tResults.semi2} t1Players={[s2_team1.f, s2_team1.m]} t2Players={[s2_team2.f, s2_team2.m]} score1={playoffScores.s2_t1} score2={playoffScores.s2_t2} onScore1={(v) => onUpdatePlayoffScore('s2_t1', v)} onScore2={(v) => onUpdatePlayoffScore('s2_t2', v)} />
+                  <div className="mt-8"><MatchCard lang={lang} title={tResults.gold} t1Players={[s1_winner.f, s1_winner.m]} t2Players={[s2_winner.f, s2_winner.m]} score1={playoffScores.final_t1} score2={playoffScores.final_t2} onScore1={(v) => onUpdatePlayoffScore('final_t1', v)} onScore2={(v) => onUpdatePlayoffScore('final_t2', v)} isFinal={true} /></div>
+                  <div className="mt-4 opacity-75 grayscale hover:grayscale-0 transition-all"><MatchCard lang={lang} title={tResults.bronze} t1Players={[s1_loser.f, s1_loser.m]} t2Players={[s2_loser.f, s2_loser.m]} score1={playoffScores.bronze_t1} score2={playoffScores.bronze_t2} onScore1={(v) => onUpdatePlayoffScore('bronze_t1', v)} onScore2={(v) => onUpdatePlayoffScore('bronze_t2', v)} /></div>
               </div>
             )}
           </div>
         );
       };
 
-      // 5. ResultsTab
+      // 5. ResultsTab & 6. SettingsTab (Condensed)
       const ResultsTab = ({ lang, scores, players, playoffScores }) => {
         const [subTab, setSubTab] = useState('rounds');
         const t = TRANSLATIONS[lang].results;
         const tSub = TRANSLATIONS[lang].subTabs;
-
         const calculateStats = () => {
           const stats = {};
           players.forEach(p => { stats[p.id] = { ...p, gamesWon: 0, matchesPlayed: 0 }; });
@@ -770,156 +692,53 @@
                   if (matchScore) {
                       const t1Score = Number(matchScore.team1Games) || 0;
                       const t2Score = Number(matchScore.team2Games) || 0;
-                      [match.team1.player1, match.team1.player2].forEach(pid => {
-                          stats[pid].gamesWon += t1Score;
-                          stats[pid].matchesPlayed += 1;
-                      });
-                      [match.team2.player1, match.team2.player2].forEach(pid => {
-                          stats[pid].gamesWon += t2Score;
-                          stats[pid].matchesPlayed += 1;
-                      });
+                      [match.team1.player1, match.team1.player2].forEach(pid => { stats[pid].gamesWon += t1Score; stats[pid].matchesPlayed += 1; });
+                      [match.team2.player1, match.team2.player2].forEach(pid => { stats[pid].gamesWon += t2Score; stats[pid].matchesPlayed += 1; });
                   }
               });
           });
           return Object.values(stats);
         };
-
         const allStats = calculateStats();
         const menStats = allStats.filter(p => p.gender === 'M').sort((a, b) => b.gamesWon - a.gamesWon);
         const womenStats = allStats.filter(p => p.gender === 'F').sort((a, b) => b.gamesWon - a.gamesWon);
-
-        const s1_team1 = { m: menStats[0], f: womenStats[3] }; 
-        const s1_team2 = { m: menStats[2], f: womenStats[1] }; 
-        const s2_team1 = { m: menStats[1], f: womenStats[2] }; 
-        const s2_team2 = { m: menStats[3], f: womenStats[0] };
-
-        const s1_winner = playoffScores.s1_t1 > playoffScores.s1_t2 ? s1_team1 : s1_team2;
-        const s1_loser = playoffScores.s1_t1 > playoffScores.s1_t2 ? s1_team2 : s1_team1;
-        const s2_winner = playoffScores.s2_t1 > playoffScores.s2_t2 ? s2_team1 : s2_team2;
-        const s2_loser = playoffScores.s2_t1 > playoffScores.s2_t2 ? s2_team2 : s2_team1;
-
         const getName = (p) => (lang === 'cn' && p.nameCn ? p.nameCn : p.name);
-
         const renderRankingTable = (title, data) => (
           <div className="bg-white rounded-xl shadow-sm overflow-hidden mb-6 border border-slate-100">
-              <div className="bg-valentine-100 px-4 py-2 font-bold text-valentine-800 border-b border-valentine-200 flex items-center">
-                  <User className="w-4 h-4 mr-2"/>
-                  {title}
-              </div>
+              <div className="bg-valentine-100 px-4 py-2 font-bold text-valentine-800 border-b border-valentine-200 flex items-center"><User className="w-4 h-4 mr-2"/>{title}</div>
               <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-slate-500">
-                      <tr>
-                          <th className="px-4 py-2 text-left w-12">#</th>
-                          <th className="px-4 py-2 text-left">{t.winner}</th>
-                          <th className="px-4 py-2 text-right">{t.games}</th>
-                      </tr>
-                  </thead>
+                  <thead className="bg-slate-50 text-slate-500"><tr><th className="px-4 py-2 text-left w-12">#</th><th className="px-4 py-2 text-left">{t.winner}</th><th className="px-4 py-2 text-right">{t.games}</th></tr></thead>
                   <tbody className="divide-y divide-gray-100">
                       {data.map((p, idx) => (
                           <tr key={p.id} className={idx < 2 ? "bg-yellow-50/30" : ""}>
-                              <td className="px-4 py-3 font-semibold text-slate-400">
-                                  {idx + 1}
-                              </td>
-                              <td className="px-4 py-3 font-medium text-slate-800 flex items-center gap-2">
-                                  <PlayerAvatar url={p.avatar} name={getName(p)} size="sm" />
-                                  {getName(p)}
-                              </td>
-                              <td className="px-4 py-3 text-right font-bold text-valentine-600">
-                                  {p.gamesWon}
-                              </td>
+                              <td className="px-4 py-3 font-semibold text-slate-400">{idx + 1}</td>
+                              <td className="px-4 py-3 font-medium text-slate-800 flex items-center gap-2"><PlayerAvatar url={p.avatar} name={getName(p)} size="sm" />{getName(p)}</td>
+                              <td className="px-4 py-3 text-right font-bold text-valentine-600">{p.gamesWon}</td>
                           </tr>
                       ))}
                   </tbody>
               </table>
           </div>
         );
-
-        const renderMatchupView = (title, t1, t2, score1, score2, isFinal = false) => (
-            <div className={`rounded-xl shadow-sm p-4 mb-4 border-2 ${isFinal ? 'bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-400' : 'bg-white border-valentine-200'}`}>
-                <div className="text-center font-bold text-valentine-800 mb-3 text-sm uppercase tracking-wider flex justify-center items-center gap-2">
-                  {isFinal && <Trophy className="w-4 h-4 text-yellow-500"/>}
-                  {title}
-                </div>
-                <div className="flex items-center justify-between">
-                    <div className="flex flex-col items-center flex-1">
-                        <div className="flex -space-x-2 mb-1">
-                            <PlayerAvatar url={t1.f.avatar} name={getName(t1.f)} size="sm" className="ring-2 ring-white z-10"/>
-                            <PlayerAvatar url={t1.m.avatar} name={getName(t1.m)} size="sm" className="ring-2 ring-white z-0"/>
-                        </div>
-                        <div className="text-sm font-semibold text-slate-800 leading-tight text-center">
-                          {getName(t1.f)}<br/>& {getName(t1.m)}
-                        </div>
-                        {!isFinal && <div className="text-[10px] text-slate-400 mt-1">({t.seed} {t1.m.gamesWon}/{t1.f.gamesWon})</div>}
-                    </div>
-
-                    <div className="flex items-center gap-2 mx-2">
-                        <span className="text-2xl font-bold text-slate-700">{score1}</span>
-                        <span className="text-slate-400 text-sm">:</span>
-                        <span className="text-2xl font-bold text-slate-700">{score2}</span>
-                    </div>
-
-                    <div className="flex flex-col items-center flex-1">
-                         <div className="flex -space-x-2 mb-1">
-                            <PlayerAvatar url={t2.f.avatar} name={getName(t2.f)} size="sm" className="ring-2 ring-white z-10"/>
-                            <PlayerAvatar url={t2.m.avatar} name={getName(t2.m)} size="sm" className="ring-2 ring-white z-0"/>
-                        </div>
-                        <div className="text-sm font-semibold text-slate-800 leading-tight text-center">
-                          {getName(t2.f)}<br/>& {getName(t2.m)}
-                        </div>
-                        {!isFinal && <div className="text-[10px] text-slate-400 mt-1">({t.seed} {t2.m.gamesWon}/{t2.f.gamesWon})</div>}
-                    </div>
-                </div>
-            </div>
-        );
-
         return (
           <div className="animate-fadeIn">
             <div className="flex justify-center mb-6">
               <div className="bg-slate-100 p-1 rounded-lg inline-flex">
-                  <button
-                      onClick={() => setSubTab('rounds')}
-                      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'rounds' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500'}`}
-                  >
-                      {tSub.rounds}
-                  </button>
-                  <button
-                      onClick={() => setSubTab('finals')}
-                      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'finals' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500'}`}
-                  >
-                      {tSub.finals}
-                  </button>
+                  <button onClick={() => setSubTab('rounds')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'rounds' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500'}`}>{tSub.rounds}</button>
+                  <button onClick={() => setSubTab('finals')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${subTab === 'finals' ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500'}`}>{tSub.finals}</button>
               </div>
             </div>
-
-            {subTab === 'rounds' ? (
-              <>
-                  {renderRankingTable(TRANSLATIONS[lang].info.ladies, womenStats)}
-                  {renderRankingTable(TRANSLATIONS[lang].info.gentlemen, menStats)}
-              </>
-            ) : (
-              <>
-                  {renderMatchupView(t.semi1, s1_team1, s1_team2, playoffScores.s1_t1, playoffScores.s1_t2)}
-                  {renderMatchupView(t.semi2, s2_team1, s2_team2, playoffScores.s2_t1, playoffScores.s2_t2)}
-                  <div className="mt-8">
-                      {renderMatchupView(t.gold, s1_winner, s2_winner, playoffScores.final_t1, playoffScores.final_t2, true)}
-                  </div>
-                  <div className="mt-4 opacity-75">
-                      {renderMatchupView(t.bronze, s1_loser, s2_loser, playoffScores.bronze_t1, playoffScores.bronze_t2)}
-                  </div>
-              </>
-            )}
+            {subTab === 'rounds' ? <>{renderRankingTable(TRANSLATIONS[lang].info.ladies, womenStats)}{renderRankingTable(TRANSLATIONS[lang].info.gentlemen, menStats)}</> : <div className="text-center text-slate-400 py-10">See Finals tab for Matchups</div>}
           </div>
         );
       };
 
-      // 6. SettingsTab
       const SettingsTab = ({ lang, players, onUpdatePlayer }) => {
         const t = TRANSLATIONS[lang].settings;
         const men = players.filter((p) => p.gender === 'M');
         const women = players.filter((p) => p.gender === 'F');
         const fileInputRef = useRef(null);
         const currentUploadId = useRef(null);
-
         const handleFileChange = (e) => {
           const file = e.target.files?.[0];
           if (file && currentUploadId.current) {
@@ -928,23 +747,9 @@
                   const img = new Image();
                   img.onload = () => {
                       const canvas = document.createElement('canvas');
-                      let width = img.width;
-                      let height = img.height;
-                      const maxSize = 300;
-
-                      if (width > height) {
-                          if (width > maxSize) {
-                              height *= maxSize / width;
-                              width = maxSize;
-                          }
-                      } else {
-                          if (height > maxSize) {
-                              width *= maxSize / height;
-                              height = maxSize;
-                          }
-                      }
-                      canvas.width = width;
-                      canvas.height = height;
+                      let width = img.width; let height = img.height; const maxSize = 300;
+                      if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } else { if (height > maxSize) { width *= maxSize / height; height = maxSize; } }
+                      canvas.width = width; canvas.height = height;
                       const ctx = canvas.getContext('2d');
                       ctx?.drawImage(img, 0, 0, width, height);
                       const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
@@ -957,69 +762,37 @@
           }
           if (fileInputRef.current) fileInputRef.current.value = '';
         };
-
-        const triggerUpload = (id) => {
-            currentUploadId.current = id;
-            fileInputRef.current?.click();
-        };
-
+        const triggerUpload = (id) => { currentUploadId.current = id; fileInputRef.current?.click(); };
         const renderPlayerInputs = (player) => (
           <div key={player.id} className="flex items-center gap-3 py-3 border-b border-slate-50 last:border-0">
             <div className="relative group cursor-pointer" onClick={() => triggerUpload(player.id)}>
                 <PlayerAvatar url={player.avatar} name={player.name} size="md" />
-                <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Upload className="w-4 h-4 text-white" />
-                </div>
+                <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Upload className="w-4 h-4 text-white" /></div>
             </div>
-            
             <div className="flex-1 grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                value={player.name}
-                onChange={(e) => onUpdatePlayer(player.id, 'name', e.target.value)}
-                placeholder={t.enName}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-valentine-400 focus:ring-1 focus:ring-valentine-200 outline-none"
-              />
-              <input
-                type="text"
-                value={player.nameCn || ''}
-                onChange={(e) => onUpdatePlayer(player.id, 'nameCn', e.target.value)}
-                placeholder={t.cnName}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-valentine-400 focus:ring-1 focus:ring-valentine-200 outline-none"
-              />
+              <input type="text" value={player.name} onChange={(e) => onUpdatePlayer(player.id, 'name', e.target.value)} placeholder={t.enName} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-valentine-400 focus:ring-1 focus:ring-valentine-200 outline-none" />
+              <input type="text" value={player.nameCn || ''} onChange={(e) => onUpdatePlayer(player.id, 'nameCn', e.target.value)} placeholder={t.cnName} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-valentine-400 focus:ring-1 focus:ring-valentine-200 outline-none" />
             </div>
           </div>
         );
-
         return (
           <div className="space-y-6 animate-fadeIn">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              accept="image/*"
-              onChange={handleFileChange}
-            />
-            
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+            {!db && (
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-sm">
+                <div className="flex items-center gap-2 text-red-700 font-bold mb-1">
+                  <CloudOff className="w-5 h-5"/> {t.syncTitle}
+                </div>
+                <p className="text-red-600 text-sm">{t.syncWarning}</p>
+                <p className="text-red-600 text-xs mt-2 font-mono bg-red-100 p-2 rounded break-all">
+                  Please update FIREBASE_CONFIG in index.html
+                </p>
+              </div>
+            )}
             <div className="bg-white rounded-2xl shadow-md p-6 border-l-4 border-valentine-400">
               <div className="space-y-6">
-                <div>
-                  <h4 className="font-semibold text-valentine-600 mb-2 flex items-center">
-                     <User className="w-4 h-4 mr-1"/> Ladies
-                  </h4>
-                  <div className="flex flex-col">
-                    {women.map(renderPlayerInputs)}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold text-valentine-600 mb-2 flex items-center">
-                    <User className="w-4 h-4 mr-1"/> Gentlemen
-                  </h4>
-                  <div className="flex flex-col">
-                    {men.map(renderPlayerInputs)}
-                  </div>
-                </div>
+                <div><h4 className="font-semibold text-valentine-600 mb-2 flex items-center"><User className="w-4 h-4 mr-1"/> Ladies</h4><div className="flex flex-col">{women.map(renderPlayerInputs)}</div></div>
+                <div><h4 className="font-semibold text-valentine-600 mb-2 flex items-center"><User className="w-4 h-4 mr-1"/> Gentlemen</h4><div className="flex flex-col">{men.map(renderPlayerInputs)}</div></div>
               </div>
             </div>
           </div>
@@ -1033,107 +806,93 @@
         const [activeTab, setActiveTab] = useState('info');
         const [scores, setScores] = useState({});
         const [players, setPlayers] = useState(PLAYERS);
-        
-        const [playoffScores, setPlayoffScores] = useState({
-          s1_t1: 0, s1_t2: 0,
-          s2_t1: 0, s2_t2: 0,
-          final_t1: 0, final_t2: 0,
-          bronze_t1: 0, bronze_t2: 0
-        });
+        const [isSyncing, setIsSyncing] = useState(false);
+        const [playoffScores, setPlayoffScores] = useState({ s1_t1: 0, s1_t2: 0, s2_t1: 0, s2_t2: 0, final_t1: 0, final_t2: 0, bronze_t1: 0, bronze_t2: 0 });
 
-        const loadData = () => {
-          const savedScores = localStorage.getItem('vmd_scores');
-          if (savedScores) {
-              try { setScores(JSON.parse(savedScores)); } catch (e) { console.error(e); }
-          }
-          const savedPlayers = localStorage.getItem('vmd_players');
-          if (savedPlayers) {
-            try { setPlayers(JSON.parse(savedPlayers)); } catch (e) { console.error(e); }
-          }
-          const savedPlayoff = localStorage.getItem('vmd_playoff');
-          if (savedPlayoff) {
-            try { setPlayoffScores(JSON.parse(savedPlayoff)); } catch (e) { console.error(e); }
-          }
-        };
-
+        // 1. Initial Load (Local Storage)
         useEffect(() => {
-          loadData();
-          const handleStorageChange = (e) => {
-              if (e.key === 'vmd_scores' || e.key === 'vmd_players' || e.key === 'vmd_playoff') {
-                  loadData();
-              }
-          };
-          window.addEventListener('storage', handleStorageChange);
-          return () => window.removeEventListener('storage', handleStorageChange);
+          const s = localStorage.getItem('vmd_scores'); if (s) try { setScores(JSON.parse(s)); } catch (e) {}
+          const p = localStorage.getItem('vmd_players'); if (p) try { setPlayers(JSON.parse(p)); } catch (e) {}
+          const pl = localStorage.getItem('vmd_playoff'); if (pl) try { setPlayoffScores(JSON.parse(pl)); } catch (e) {}
         }, []);
 
+        // 2. Firebase Sync Listener
         useEffect(() => {
-            localStorage.setItem('vmd_scores', JSON.stringify(scores));
-        }, [scores]);
+          if (!db) return;
+          setIsSyncing(true);
+          const unsub = onSnapshot(doc(db, COLLECTION_ID, DOC_ID), (docSnap) => {
+             if (docSnap.exists()) {
+               const data = docSnap.data();
+               if (data.scores) setScores(data.scores);
+               if (data.players) setPlayers(data.players);
+               if (data.playoffScores) setPlayoffScores(data.playoffScores);
+             }
+             setIsSyncing(false);
+          }, (err) => {
+             console.error("Sync error:", err);
+             setIsSyncing(false);
+          });
+          return () => unsub();
+        }, []);
 
-        useEffect(() => {
-          localStorage.setItem('vmd_players', JSON.stringify(players));
-        }, [players]);
-
-        useEffect(() => {
-          localStorage.setItem('vmd_playoff', JSON.stringify(playoffScores));
-        }, [playoffScores]);
+        // 3. Save Handlers (Local + Cloud)
+        const saveData = async (newScores, newPlayers, newPlayoff) => {
+            // Local
+            if (newScores) localStorage.setItem('vmd_scores', JSON.stringify(newScores));
+            if (newPlayers) localStorage.setItem('vmd_players', JSON.stringify(newPlayers));
+            if (newPlayoff) localStorage.setItem('vmd_playoff', JSON.stringify(newPlayoff));
+            
+            // Cloud
+            if (db) {
+               setIsSyncing(true);
+               const updatePayload = {};
+               if (newScores) updatePayload.scores = newScores;
+               if (newPlayers) updatePayload.players = newPlayers;
+               if (newPlayoff) updatePayload.playoffScores = newPlayoff;
+               try {
+                  await setDoc(doc(db, COLLECTION_ID, DOC_ID), updatePayload, { merge: true });
+               } catch(e) { console.error("Save failed", e); }
+               setIsSyncing(false);
+            }
+        };
 
         const handleUpdateScore = (matchId, team, value) => {
             const numVal = parseInt(value);
             if (!isNaN(numVal) || value === '') {
-              setScores(prev => ({
-                  ...prev,
+              const newScores = {
+                  ...scores,
                   [matchId]: {
-                      ...prev[matchId],
+                      ...scores[matchId],
                       [team === 'team1' ? 'team1Games' : 'team2Games']: value === '' ? undefined : numVal
                   }
-              }));
+              };
+              setScores(newScores);
+              saveData(newScores, null, null);
             }
         };
 
         const handleUpdatePlayer = (id, field, value) => {
-          setPlayers(prev => prev.map(p => 
-            p.id === id ? { ...p, [field]: value } : p
-          ));
+          const newPlayers = players.map(p => p.id === id ? { ...p, [field]: value } : p);
+          setPlayers(newPlayers);
+          saveData(null, newPlayers, null);
         };
 
         const handleUpdatePlayoffScore = (key, value) => {
-           setPlayoffScores(prev => ({ ...prev, [key]: Number(value) }));
+           const newPlayoff = { ...playoffScores, [key]: Number(value) };
+           setPlayoffScores(newPlayoff);
+           saveData(null, null, newPlayoff);
         };
 
         const t = TRANSLATIONS[lang];
 
         const renderTabContent = () => {
           switch (activeTab) {
-            case 'info':
-              return <InfoTab lang={lang} players={players} />;
-            case 'schedule':
-              return <ScheduleTab lang={lang} players={players} />;
-            case 'scores':
-              return (
-                  <ScoreTab 
-                      lang={lang} 
-                      scores={scores} 
-                      players={players} 
-                      playoffScores={playoffScores}
-                      onUpdateScore={handleUpdateScore} 
-                      onUpdatePlayoffScore={handleUpdatePlayoffScore}
-                  />
-              );
-            case 'results':
-              return (
-                  <ResultsTab 
-                      lang={lang} 
-                      scores={scores} 
-                      players={players} 
-                      playoffScores={playoffScores}
-                  />
-              );
-            case 'settings':
-              return <SettingsTab lang={lang} players={players} onUpdatePlayer={handleUpdatePlayer} />;
-            default:
-              return <InfoTab lang={lang} players={players} />;
+            case 'info': return <InfoTab lang={lang} players={players} />;
+            case 'schedule': return <ScheduleTab lang={lang} players={players} />;
+            case 'scores': return <ScoreTab lang={lang} scores={scores} players={players} playoffScores={playoffScores} onUpdateScore={handleUpdateScore} onUpdatePlayoffScore={handleUpdatePlayoffScore} />;
+            case 'results': return <ResultsTab lang={lang} scores={scores} players={players} playoffScores={playoffScores} />;
+            case 'settings': return <SettingsTab lang={lang} players={players} onUpdatePlayer={handleUpdatePlayer} />;
+            default: return <InfoTab lang={lang} players={players} />;
           }
         };
 
@@ -1142,22 +901,23 @@
             <header className="bg-white shadow-sm sticky top-0 z-20">
               <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                      <div className="bg-valentine-500 p-1.5 rounded-full">
-                          <Heart className="w-5 h-5 text-white fill-current" />
-                      </div>
-                      <h1 className="font-bold text-valentine-900 truncate max-w-[200px] sm:max-w-none">
-                          {t.title}
-                      </h1>
+                      <div className="bg-valentine-500 p-1.5 rounded-full"><Heart className="w-5 h-5 text-white fill-current" /></div>
+                      <h1 className="font-bold text-valentine-900 truncate max-w-[200px] sm:max-w-none">{t.title}</h1>
                   </div>
-                  
-                  <button
-                      onClick={() => setLang(l => l === 'en' ? 'cn' : 'en')}
-                      className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-bold text-sm border border-slate-200 active:scale-95 transition-transform"
-                  >
-                      {lang === 'en' ? '中文' : 'EN'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {db ? (
+                        <div className="flex items-center text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                           {isSyncing ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : <Cloud className="w-3 h-3 mr-1"/>}
+                           {isSyncing ? 'Syncing...' : 'Live'}
+                        </div>
+                    ) : (
+                        <div className="flex items-center text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">
+                           <CloudOff className="w-3 h-3 mr-1"/> Offline
+                        </div>
+                    )}
+                    <button onClick={() => setLang(l => l === 'en' ? 'cn' : 'en')} className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-bold text-sm border border-slate-200 active:scale-95 transition-transform">{lang === 'en' ? '中文' : 'EN'}</button>
+                  </div>
               </div>
-              
               <div className="max-w-md mx-auto px-2 pb-2">
                   <div className="flex bg-slate-100/50 p-1 rounded-xl overflow-x-auto no-scrollbar">
                       {['info', 'schedule', 'scores', 'results', 'settings'].map((tab) => {
@@ -1167,37 +927,23 @@
                            if (tab === 'scores') Icon = ClipboardList;
                            if (tab === 'results') Icon = Trophy;
                            if (tab === 'settings') Icon = Settings;
-
                            return (
-                              <button
-                                  key={tab}
-                                  onClick={() => setActiveTab(tab)}
-                                  className={`flex-1 min-w-[60px] flex flex-col items-center justify-center py-2 rounded-lg text-[10px] sm:text-xs font-medium transition-all duration-200 ${
-                                      isActive 
-                                      ? 'bg-white text-valentine-600 shadow-sm' 
-                                      : 'text-slate-500 hover:bg-white/50'
-                                  }`}
-                              >
-                                  <Icon className={`w-5 h-5 mb-0.5 ${isActive ? 'stroke-2' : 'stroke-1.5'}`}/>
-                                  {t.tabs[tab]}
+                              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 min-w-[60px] flex flex-col items-center justify-center py-2 rounded-lg text-[10px] sm:text-xs font-medium transition-all duration-200 ${isActive ? 'bg-white text-valentine-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
+                                  <Icon className={`w-5 h-5 mb-0.5 ${isActive ? 'stroke-2' : 'stroke-1.5'}`}/>{t.tabs[tab]}
                               </button>
                            );
                       })}
                   </div>
               </div>
             </header>
-
             <main className="max-w-md mx-auto px-4 py-6 flex-grow w-full">
               {renderTabContent()}
-              <div className="mt-4 text-center text-slate-400 text-xs py-4 border-t border-valentine-100">
-                 {t.footer}
-              </div>
+              <div className="mt-4 text-center text-slate-400 text-xs py-4 border-t border-valentine-100">{t.footer}</div>
             </main>
           </div>
         );
       };
-
-      // --- RENDER ---
+      
       const root = createRoot(document.getElementById('root'));
       root.render(<App />);
     </script>
